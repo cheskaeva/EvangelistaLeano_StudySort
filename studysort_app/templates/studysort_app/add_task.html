@@ -9,7 +9,7 @@
             <div class="p-5">
                 <!-- Header -->
                 <div class="text-center mb-5">
-                    <h1 class="h4 fw-bold mb-2">Add new task</h1>
+                    <h1 class="h4 fw-bold mb-2">Add New Task</h1>
                 </div>
 
                 <!-- Messages -->
@@ -69,7 +69,7 @@
                                 <option value="2" {% if request.POST.importance == "2" %}selected{% endif %}>2 - Somewhat important</option>
                                 <option value="3" {% if request.POST.importance == "3" or not request.POST.importance %}selected{% endif %}>3 - Medium importance</option>
                                 <option value="4" {% if request.POST.importance == "4" %}selected{% endif %}>4 - Important</option>
-                                <option value="5" {% if request.POST.importance == "5" %}selected{% endif %}>5 - Very importance</option>
+                                <option value="5" {% if request.POST.importance == "5" %}selected{% endif %}>5 - Very important</option>
                             </select>
                             <div class="form-text text-muted">How important is this task?</div>
                         </div>
