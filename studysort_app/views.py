@@ -81,15 +81,19 @@ def check_duplicate_task(class_name, task_name, exclude_id=None):
 
 # View Functions 
 def index(request):
-    tasks = list(StudyTask.objects.all())
+    if 'sorted_tasks' in request.session:
+        sorted_tasks = request.session['sorted_tasks'] # stored data users session
+    else:
+        tasks = list(StudyTask.objects.all())
+        if tasks:
+            sorted_tasks = merge_sort(tasks)
+        else:
+            sorted_tasks = []
+        request.session['sorted_tasks'] = sorted_tasks 
 
     # rank tasks by priority 
-    if tasks:
-        sorted_tasks = merge_sort(tasks) 
-        for rank, task in enumerate(sorted_tasks, start=1):
-            task.rank = rank # temporary attribute 
-    else:
-        sorted_tasks = []
+    for rank, task in enumerate(sorted_tasks, start=1):
+        task.rank = rank # temporary attribute 
 
     context = {
         'tasks': sorted_tasks,
@@ -116,7 +120,12 @@ def add_task(request):
         # submit form
         form = StudyTaskForm(request.POST)
         if form.is_valid():
-            form.save()
+            new_task = form.save()
+
+            current_sorted_tasks = request.session.get('sorted_tasks', []) # current sorted list
+            updated_sorted_tasks = insertion_sort_single(current_sorted_tasks, new_task) # insertion sort 
+            request.session['sorted_tasks'] = updated_sorted_tasks # update session with new sorted list 
+
             messages.success(request, f"🟢 Task '{task_name}' added to '{class_name}' successfully!")
             return redirect('index')
         else:
@@ -126,7 +135,7 @@ def add_task(request):
     else:
         form = StudyTaskForm()
 
-    current_datetime = timezone.now().strftime('%Y-%m-d\TH:i')
+    current_datetime = timezone.now().strftime('%Y-%m-%d\TH:i')
     return render(request, 'studysort_app/add_task.html', {
         'form': form,
         'current_datetime': current_datetime
@@ -139,6 +148,15 @@ def delete_task(request, task_id):
         task_name = task.task_name
         class_name = task.class_name
         task.delete()  
+
+        # remove from sorted list in session
+        current_sorted_tasks = request.session.get('sorted_tasks', [])
+        updated_sorted_tasks = []
+        for t in current_sorted_tasks:
+            if t.id != task.id: 
+                updated_sorted_tasks.append(t)
+        request.session['sorted_tasks'] = updated_sorted_tasks
+
         messages.success(request, f"🗑 Task '{task_name}' from {class_name} deleted successfully!")
         return redirect('index')
     
@@ -152,6 +170,11 @@ def edit_task(request, task_id):
         
         if form.is_valid():
             form.save()
+
+            # resort using mergesort again
+            tasks = list(StudyTask.objects.all())
+            request.session['sorted_tasks'] = merge_sort(tasks) if tasks else []
+
             messages.success(request, f"Task '{task.task_name}' updated successfully!")
             return redirect('index')
     else:
