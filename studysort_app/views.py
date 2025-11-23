@@ -1,8 +1,13 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django import forms
 from django.contrib import messages
+from django.utils import timezone
 from .models import StudyTask
-import re
+
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 # form class for add StudyTask
 class StudyTaskForm(forms.ModelForm):
@@ -14,23 +19,162 @@ class StudyTaskForm(forms.ModelForm):
             'importance': forms.NumberInput(attrs={'min': 1, 'max': 5}),
             'difficulty': forms.NumberInput(attrs={'min': 1, 'max': 5}), 
         }
+        
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get('deadline')
+        if deadline and deadline < timezone.now():
+            raise forms.ValidationError("Deadline cannot be in the past.")
+        return deadline
 
+# Sorting Algorithms
+# (1) Merge Sort
+def merge_sort(tasks):
+    if len(tasks) <= 1:
+        return tasks # base case
+    
+    # recursively splits left and right halves 
+    mid = len(tasks) // 2
+    left = merge_sort(tasks[:mid]) 
+    right = merge_sort(tasks[mid:]) 
+    return merge(left, right)
+
+def merge(left, right):
+    result = []
+    i = j = 0
+
+    while i < len(left) and j < len(right):
+        # compares priority score for ordering 
+        if left[i].priority_score >= right[j].priority_score:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result 
+
+# (2) Insertion Sort 
+def insertion_sort_single(sorted_tasks, new_task):
+    insert_position = len(sorted_tasks)
+
+    # loop until new task is greater than each tasks priority score 
+    for i, task in enumerate(sorted_tasks):
+        if new_task.priority_score > task.priority_score:
+            insert_position = i
+            break
+    
+    sorted_tasks.insert(insert_position, new_task)
+    return sorted_tasks 
+
+# Data Structures 
+# Hash Table 
+def check_duplicate_task(class_name, task_name, exclude_id=None):
+    query = StudyTask.objects.filter(class_name = class_name, task_name = task_name)
+
+    # if editing task
+    # cannot be considered duplicate 
+    if exclude_id:
+        query = query.exclude(id = exclude_id)
+    return query.exists()
+
+# View Functions 
 def index(request):
-    return render(request, 'studysort_app/index.html')
+    tasks = list(StudyTask.objects.all())
+
+    # rank tasks by priority 
+    if tasks:
+        sorted_tasks = merge_sort(tasks) 
+        for rank, task in enumerate(sorted_tasks, start=1):
+            task.rank = rank # temporary attribute 
+    else:
+        sorted_tasks = []
+
+    context = {
+        'tasks': sorted_tasks,
+        'task_count': len(sorted_tasks)
+    }
+
+    return render(request, 'studysort_app/index.html', context)
 
 def add_task(request):
     if request.method == "POST":
+        task_name = request.POST.get('task_name', '')
+        class_name = request.POST.get('class_name', '')
+
+        # check duplicates
+        if check_duplicate_task(class_name, task_name):
+            messages.error(
+                request,
+                f"🟡 Task '{task_name}' already exists in {class_name}."
+            )
+            return render(request, 'studysort_app/add_task.html', {
+                'current_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M')
+            })
+        
+        # submit form
         form = StudyTaskForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('results')
+            messages.success(request, f"🟢 Task '{task_name}' added to '{class_name}' successfully!")
+            return redirect('index')
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
     else:
-        form = StudyTaskForm
+        form = StudyTaskForm()
+
+    current_datetime = timezone.now().strftime('%Y-%m-d\TH:i')
+    return render(request, 'studysort_app/add_task.html', {
+        'form': form,
+        'current_datetime': current_datetime
+    })
+
+def delete_task(request, task_id):
+    task = get_object_or_404(StudyTask, id=task_id)
     
-    return render(request, 'studysort_app/add_task.html', {'form': form})
+    if request.method == "POST":
+        task_name = task.task_name
+        class_name = task.class_name
+        task.delete()  
+        messages.success(request, f"🗑 Task '{task_name}' from {class_name} deleted successfully!")
+        return redirect('index')
+    
+    return render(request, 'studysort_app/delete_task.html', {'task': task})
 
-def results(request):
-    tasks = StudyTask.objects.all()
-    sorted_tasks = sorted(tasks, key=lambda t: t.priority_score, reverse=True)
+def edit_task(request, task_id):
+    task = get_object_or_404(StudyTask, id=task_id)
+    
+    if request.method == "POST":
+        form = StudyTaskForm(request.POST, instance=task)
+        
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Task '{task.task_name}' updated successfully!")
+            return redirect('index')
+    else:
+        form = StudyTaskForm(instance=task)
+    
+    return render(request, 'studysort_app/edit_task.html', {
+        'task': task,
+        'form': form
+    })
 
-    return render(request, 'studysort_app/results.html', {'tasks': sorted_tasks})
+# Additional Features
+def hide_tutorial(request):
+    request.session['hide_how_it_works'] = True
+    return redirect('index')
+
+def show_tutorial(request):
+    if 'hide_how_it_works' in request.session:
+        del request.session['hide_how_it_works']
+    return redirect('index')
+
+def complete_task(request, task_id):
+    task = get_object_or_404(StudyTask, id=task_id)
+    task_name = task.task_name
+    task.delete()
+    messages.success(request, f"🎉 Completed task '{task_name}'! Great job!")
+    return redirect('index')

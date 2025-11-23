@@ -1,0 +1,53 @@
+{% extends 'studysort_app/base.html' %}
+
+{% block title %}Delete Task - StudySort{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-6 col-lg-5">
+        <div class="notion-card">
+            <div class="p-5 text-center">
+                <!-- Warning Icon -->
+                <div class="mb-4">
+                    <span style="font-size: 3rem;">🗑️</span>
+                </div>
+                
+                <!-- Header -->
+                <h1 class="h5 fw-bold mb-3">Delete this task?</h1>
+                <p class="text-muted mb-4">This action cannot be undone.</p>
+                
+                <!-- Task Details -->
+                <div class="bg-light rounded p-4 mb-4">
+                    <div class="text-start">
+                        <div class="mb-3">
+                            <span class="text-muted small">Task</span>
+                            <div class="fw-medium">{{ task.task_name }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <span class="text-muted small">Class</span>
+                            <div>{{ task.class_name }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <span class="text-muted small">Due date</span>
+                            <div>{{ task.deadline|date:"M j, Y" }}</div>
+                        </div>
+                        <div>
+                            <span class="text-muted small">Priority score</span>
+                            <div class="fw-medium">{{ task.priority_score }}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="d-flex gap-3">
+                        <a href="{% url 'index' %}" class="btn btn-notion-outline flex-fill">Cancel</a>
+                        <button type="submit" class="btn btn-danger flex-fill">Delete task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
