@@ -13,6 +13,21 @@ class StudyTask(models.Model):
 
     def __str__(self):
         return self.task_name
+
+    @property
+    def urgency_factor(self):
+        hours_until_deadline = max(0, (self.deadline - timezone.now()).total_seconds() / 3600)
+        
+        if hours_until_deadline <= 24:    
+            return 5
+        elif hours_until_deadline <= 72:  
+            return 4
+        elif hours_until_deadline <= 168: 
+            return 3
+        elif hours_until_deadline <= 336: 
+            return 2
+        else:                             
+            return 1
     
     @property
     def duration_factor(self):
@@ -31,8 +46,8 @@ class StudyTask(models.Model):
 
     @property
     def priority_score(self):
-        return (self.difficulty * 2) + (self.importance * 3) + self.duration_factor
-        
+        return (self.difficulty * 2) + (self.importance * 3) + self.duration_factor + (self.urgency_factor * 4)        
+    
     def clean(self):
         super().clean()
         if self.deadline and self.deadline < timezone.now():
