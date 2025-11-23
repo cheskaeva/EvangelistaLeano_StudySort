@@ -81,19 +81,35 @@ def check_duplicate_task(class_name, task_name, exclude_id=None):
 
 # View Functions 
 def index(request):
-    if 'sorted_tasks' in request.session:
-        sorted_tasks = request.session['sorted_tasks'] # stored data users session
+    # Homepage with sorted task list 
+    # uses merge sort -> cached list 
+
+    # Check if we have cached sorted list in session
+    if 'sorted_task_ids' in request.session:
+        try:
+            # Get tasks from cached sorted order
+            sorted_ids = request.session['sorted_task_ids']
+            sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids if StudyTask.objects.filter(id=tid).exists()]
+            
+            # Verify count matches (in case tasks were deleted outside normal flow)
+            if len(sorted_tasks) != StudyTask.objects.count():
+                raise ValueError("Cache out of sync")
+                
+        except (ValueError, StudyTask.DoesNotExist):
+            # Cache is invalid, rebuild with MERGE SORT
+            tasks = list(StudyTask.objects.all())
+            sorted_tasks = merge_sort(tasks) if tasks else []
+            request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
     else:
+        # First time - use MERGE SORT to create initial sorted list
         tasks = list(StudyTask.objects.all())
-        if tasks:
-            sorted_tasks = merge_sort(tasks)
-        else:
-            sorted_tasks = []
-        request.session['sorted_tasks'] = sorted_tasks 
+        sorted_tasks = merge_sort(tasks) if tasks else []
+        request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+
 
     # rank tasks by priority 
     for rank, task in enumerate(sorted_tasks, start=1):
-        task.rank = rank # temporary attribute 
+        task.rank = rank
 
     context = {
         'tasks': sorted_tasks,
@@ -121,10 +137,29 @@ def add_task(request):
         form = StudyTaskForm(request.POST)
         if form.is_valid():
             new_task = form.save()
-
-            current_sorted_tasks = request.session.get('sorted_tasks', []) # current sorted list
-            updated_sorted_tasks = insertion_sort_single(current_sorted_tasks, new_task) # insertion sort 
-            request.session['sorted_tasks'] = updated_sorted_tasks # update session with new sorted list 
+            
+            if 'sorted_task_ids' in request.session:
+                try:
+                    # Get cached sorted tasks
+                    sorted_ids = request.session['sorted_task_ids']
+                    sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids]
+                    
+                    # USE INSERTION SORT - O(n) to insert new task
+                    sorted_tasks = insertion_sort_single(sorted_tasks, new_task)
+                    
+                    # Update cache
+                    request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+                    
+                except StudyTask.DoesNotExist:
+                    # Cache invalid, rebuild with MERGE SORT
+                    all_tasks = list(StudyTask.objects.all())
+                    sorted_tasks = merge_sort(all_tasks)
+                    request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+            else:
+                # No cache exists, use MERGE SORT
+                all_tasks = list(StudyTask.objects.all())
+                sorted_tasks = merge_sort(all_tasks)
+                request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
 
             messages.success(request, f"🟢 Task '{task_name}' added to '{class_name}' successfully!")
             return redirect('index')
@@ -149,13 +184,8 @@ def delete_task(request, task_id):
         class_name = task.class_name
         task.delete()  
 
-        # remove from sorted list in session
-        current_sorted_tasks = request.session.get('sorted_tasks', [])
-        updated_sorted_tasks = []
-        for t in current_sorted_tasks:
-            if t.id != task.id: 
-                updated_sorted_tasks.append(t)
-        request.session['sorted_tasks'] = updated_sorted_tasks
+        if 'sorted_task_ids' in request.session:
+            del request.session['sorted_task_ids']
 
         messages.success(request, f"🗑 Task '{task_name}' from {class_name} deleted successfully!")
         return redirect('index')
@@ -171,9 +201,8 @@ def edit_task(request, task_id):
         if form.is_valid():
             form.save()
 
-            # resort using mergesort again
-            tasks = list(StudyTask.objects.all())
-            request.session['sorted_tasks'] = merge_sort(tasks) if tasks else []
+            if 'sorted_task_ids' in request.session:
+                del request.session['sorted_task_ids']
 
             messages.success(request, f"Task '{task.task_name}' updated successfully!")
             return redirect('index')
@@ -199,5 +228,9 @@ def complete_task(request, task_id):
     task = get_object_or_404(StudyTask, id=task_id)
     task_name = task.task_name
     task.delete()
+
+    if 'sorted_task_ids' in request.session:
+            del request.session['sorted_task_ids']
+
     messages.success(request, f"🎉 Completed task '{task_name}'! Great job!")
     return redirect('index')
