@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-# form class for add StudyTask
+# Form
 class StudyTaskForm(forms.ModelForm):
     class Meta:
         model = StudyTask
@@ -30,9 +30,8 @@ class StudyTaskForm(forms.ModelForm):
 # (1) Merge Sort
 def merge_sort(tasks):
     if len(tasks) <= 1:
-        return tasks # base case
+        return tasks 
     
-    # recursively splits left and right halves 
     mid = len(tasks) // 2
     left = merge_sort(tasks[:mid]) 
     right = merge_sort(tasks[mid:]) 
@@ -43,7 +42,6 @@ def merge(left, right):
     i = j = 0
 
     while i < len(left) and j < len(right):
-        # compares priority score for ordering 
         if left[i].priority_score >= right[j].priority_score:
             result.append(left[i])
             i += 1
@@ -59,7 +57,6 @@ def merge(left, right):
 def insertion_sort_single(sorted_tasks, new_task):
     insert_position = len(sorted_tasks)
 
-    # loop until new task is greater than each tasks priority score 
     for i, task in enumerate(sorted_tasks):
         if new_task.priority_score > task.priority_score:
             insert_position = i
@@ -73,41 +70,32 @@ def insertion_sort_single(sorted_tasks, new_task):
 def check_duplicate_task(class_name, task_name, exclude_id=None):
     query = StudyTask.objects.filter(class_name = class_name, task_name = task_name)
 
-    # if editing task
-    # cannot be considered duplicate 
     if exclude_id:
         query = query.exclude(id = exclude_id)
     return query.exists()
 
 # View Functions 
 def index(request):
-    # Homepage with sorted task list 
-    # uses merge sort -> cached list 
 
-    # Check if we have cached sorted list in session
+    # Checks for cached sorted list in session
     if 'sorted_task_ids' in request.session:
         try:
-            # Get tasks from cached sorted order
             sorted_ids = request.session['sorted_task_ids']
             sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids if StudyTask.objects.filter(id=tid).exists()]
-            
-            # Verify count matches (in case tasks were deleted outside normal flow)
-            if len(sorted_tasks) != StudyTask.objects.count():
-                raise ValueError("Cache out of sync")
-                
+                            
         except (ValueError, StudyTask.DoesNotExist):
-            # Cache is invalid, rebuild with MERGE SORT
             tasks = list(StudyTask.objects.all())
             sorted_tasks = merge_sort(tasks) if tasks else []
             request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
     else:
-        # First time - use MERGE SORT to create initial sorted list
         tasks = list(StudyTask.objects.all())
-        sorted_tasks = merge_sort(tasks) if tasks else []
+        if tasks:
+            sorted_tasks = merge_sort(tasks)
+        else:
+            sorted_tasks = []
         request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
 
-
-    # rank tasks by priority 
+    # Rank tasks by priority 
     for rank, task in enumerate(sorted_tasks, start=1):
         task.rank = rank
 
@@ -123,7 +111,6 @@ def add_task(request):
         task_name = request.POST.get('task_name', '')
         class_name = request.POST.get('class_name', '')
 
-        # check duplicates
         if check_duplicate_task(class_name, task_name):
             messages.error(
                 request,
@@ -133,7 +120,6 @@ def add_task(request):
                 'current_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M')
             })
         
-        # submit form
         form = StudyTaskForm(request.POST)
         if form.is_valid():
             new_task = form.save()
@@ -142,21 +128,19 @@ def add_task(request):
                 try:
                     # Get cached sorted tasks
                     sorted_ids = request.session['sorted_task_ids']
-                    sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids]
+                    sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids] # Saves list of IDs for session
                     
-                    # USE INSERTION SORT - O(n) to insert new task
+                    # Call insertion_sort 
                     sorted_tasks = insertion_sort_single(sorted_tasks, new_task)
                     
                     # Update cache
                     request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
                     
                 except StudyTask.DoesNotExist:
-                    # Cache invalid, rebuild with MERGE SORT
                     all_tasks = list(StudyTask.objects.all())
                     sorted_tasks = merge_sort(all_tasks)
                     request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
             else:
-                # No cache exists, use MERGE SORT
                 all_tasks = list(StudyTask.objects.all())
                 sorted_tasks = merge_sort(all_tasks)
                 request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
@@ -214,16 +198,6 @@ def edit_task(request, task_id):
         'form': form
     })
 
-# Additional Features
-def hide_tutorial(request):
-    request.session['hide_how_it_works'] = True
-    return redirect('index')
-
-def show_tutorial(request):
-    if 'hide_how_it_works' in request.session:
-        del request.session['hide_how_it_works']
-    return redirect('index')
-
 def complete_task(request, task_id):
     task = get_object_or_404(StudyTask, id=task_id)
     task_name = task.task_name
@@ -233,4 +207,14 @@ def complete_task(request, task_id):
             del request.session['sorted_task_ids']
 
     messages.success(request, f"🎉 Completed task '{task_name}'! Great job!")
+    return redirect('index')
+
+# Additional Features 
+def hide_tutorial(request):
+    request.session['hide_how_it_works'] = True
+    return redirect('index')
+
+def show_tutorial(request):
+    if 'hide_how_it_works' in request.session:
+        del request.session['hide_how_it_works']
     return redirect('index')
