@@ -97,6 +97,10 @@ def index(request):
         request.session['sorted_task_ids'] = [t.id for t in sorted_tasks] 
         # Creates the cache
         # Gets id of each task in sorted_tasks 
+    
+    # rank tasks by priority 
+    for rank, task in enumerate(sorted_tasks, start=1):
+        task.rank = rank
 
     context = {
         'tasks': sorted_tasks,
