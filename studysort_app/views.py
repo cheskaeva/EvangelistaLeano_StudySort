@@ -79,25 +79,24 @@ def index(request):
 
     # Checks for cached sorted list in session
     if 'sorted_task_ids' in request.session:
-        try:
-            sorted_ids = request.session['sorted_task_ids']
-            sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids if StudyTask.objects.filter(id=tid).exists()]
-                            
-        except (ValueError, StudyTask.DoesNotExist):
-            tasks = list(StudyTask.objects.all())
-            sorted_tasks = merge_sort(tasks) if tasks else []
-            request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+        sorted_ids = request.session['sorted_task_ids']
+        sorted_tasks = []
+
+        for task_id in sorted_ids:
+            if StudyTask.objects.filter(id=task_id).exists():
+                task = StudyTask.objects.get(id=task_id)
+                sorted_tasks.append(task)
+                # Reads from cache 
+                
     else:
         tasks = list(StudyTask.objects.all())
         if tasks:
             sorted_tasks = merge_sort(tasks)
         else:
             sorted_tasks = []
-        request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
-
-    # Rank tasks by priority 
-    for rank, task in enumerate(sorted_tasks, start=1):
-        task.rank = rank
+        request.session['sorted_task_ids'] = [t.id for t in sorted_tasks] 
+        # Creates the cache
+        # Gets id of each task in sorted_tasks 
 
     context = {
         'tasks': sorted_tasks,
@@ -125,28 +124,27 @@ def add_task(request):
             new_task = form.save()
             
             if 'sorted_task_ids' in request.session:
-                try:
-                    # Get cached sorted tasks
-                    sorted_ids = request.session['sorted_task_ids']
-                    sorted_tasks = [StudyTask.objects.get(id=tid) for tid in sorted_ids] # Saves list of IDs for session
-                    
-                    # Call insertion_sort 
-                    sorted_tasks = insertion_sort_single(sorted_tasks, new_task)
-                    
-                    # Update cache
-                    request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
-                    
-                except StudyTask.DoesNotExist:
-                    all_tasks = list(StudyTask.objects.all())
-                    sorted_tasks = merge_sort(all_tasks)
-                    request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+                sorted_ids = request.session['sorted_task_ids']
+
+                sorted_tasks = []
+                for task_id in sorted_ids:
+                    if StudyTask.objects.filter(id=task_id).exists():
+                        task = StudyTask.objects.get(id=task_id)
+                        sorted_tasks.append(task)
+                        # Reads from cache 
+                
+                sorted_tasks = insertion_sort_single(sorted_tasks, new_task) # insert sort
+                request.session['sorted_task_ids'] = [t.id for t in sorted_tasks] # update cache
+
             else:
+                # No cache exists
                 all_tasks = list(StudyTask.objects.all())
                 sorted_tasks = merge_sort(all_tasks)
-                request.session['sorted_task_ids'] = [t.id for t in sorted_tasks]
+                request.session['sorted_task_ids'] = [t.id for t in sorted_tasks] # create cache
 
             messages.success(request, f"🟢 Task '{task_name}' added to '{class_name}' successfully!")
             return redirect('index')
+        
         else:
             for field, errors in form.errors.items():
                 for error in errors:
@@ -154,7 +152,7 @@ def add_task(request):
     else:
         form = StudyTaskForm()
 
-    current_datetime = timezone.now().strftime('%Y-%m-%d\TH:i')
+    current_datetime = timezone.now().strftime('%Y-%m-%dT%H:%M')
     return render(request, 'studysort_app/add_task.html', {
         'form': form,
         'current_datetime': current_datetime
